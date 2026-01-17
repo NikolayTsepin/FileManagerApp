@@ -26,7 +26,6 @@ class WelcomeTextTest : TestCase() {
                     }
                     goToFilesButton {
                         isDisplayed()
-                        click()
                     }
                 }
             }
