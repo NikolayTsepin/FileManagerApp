@@ -1,77 +1,131 @@
 package com.example.filemanager
 
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.filemanager.databinding.ActivityFileManagerBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 class FileManagerActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityFileManagerBinding
-    private val items = mutableListOf<FileItem>()
-    private lateinit var adapter: FileAdapter
-
-    private val pathStack = mutableListOf<String>().apply { add("root") }
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var adapter: FilesAdapter
+    private val filesList = mutableListOf<FileItem>() // Изначально пустой список
+    private val storageDir: File by lazy {
+        File(filesDir, "my_files") // Папка для хранения файлов
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityFileManagerBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_file_manager)
 
-        setupRecyclerView()
-        setupClickListeners()
-        loadFolderContents("root")
-        updateUI()
-    }
-
-    private fun setupRecyclerView() {
-        adapter = FileAdapter(items) { item ->
-            if (item.isFolder) {
-                pathStack.add(item.name)
-                loadFolderContents(item.name)
-                updateUI()
-            } else {
-                Toast.makeText(this, "Открыт файл: ${item.name}", Toast.LENGTH_SHORT).show()
-            }
+        // Создаем папку если не существует
+        if (!storageDir.exists()) {
+            storageDir.mkdirs()
         }
 
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
-        binding.recyclerView.adapter = adapter
+        initViews()
+        loadFiles() // Загружаем файлы (изначально будет пусто)
     }
 
-    private fun setupClickListeners() {
-        binding.btnBack.setOnClickListener {
-            if (pathStack.size > 1) {
-                pathStack.removeLast()
-                loadFolderContents(pathStack.last())
-                updateUI()
-            } else {
-                finish()
-            }
+    private fun initViews() {
+        recyclerView = findViewById(R.id.recycler_view_files)
+        val emptyState = findViewById<TextView>(R.id.tv_empty_state)
+        val menuButton = findViewById<ImageButton>(R.id.btn_menu)
+
+        // ⭐ ДОБАВЛЕНО: находим кнопку назад
+        val backButton = findViewById<ImageButton>(R.id.btn_back)
+
+        // ⭐ ДОБАВЛЕНО: обработчик кнопки назад
+        backButton.setOnClickListener {
+            finish() // Закрываем Activity
         }
 
-        binding.btnMenu.setOnClickListener {
-            showOptionsMenu()
+        // Настройка RecyclerView
+        adapter = FilesAdapter(filesList) { fileItem ->
+            // Обработка клика по файлу
+            openFile(fileItem.file)
+        }
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = adapter
+
+        // Кнопка меню (три точки)
+        menuButton.setOnClickListener {
+            showCreateMenu()
+        }
+
+        // Показываем/скрываем текст пустого состояния
+        updateEmptyState()
+    }
+
+    private fun loadFiles() {
+        filesList.clear()
+
+        // Получаем список файлов из папки
+        val files = storageDir.listFiles() ?: emptyArray()
+
+        files.forEach { file ->
+            filesList.add(FileItem(
+                name = file.name,
+                size = "${file.length()} bytes",
+                date = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(file.lastModified())),
+                file = file
+            ))
+        }
+
+        adapter.notifyDataSetChanged()
+        updateEmptyState()
+    }
+
+    private fun updateEmptyState() {
+        val emptyState = findViewById<TextView>(R.id.tv_empty_state)
+        if (filesList.isEmpty()) {
+            emptyState.visibility = View.VISIBLE
+            recyclerView.visibility = View.GONE
+        } else {
+            emptyState.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
         }
     }
 
-    private fun showOptionsMenu() {
-        val options = arrayOf("Создать папку", "Добавить файл")
+    private fun showCreateMenu() {
+        val items = arrayOf("Создать текстовый файл", "Создать папку", "Добавить файл")
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Выберите действие")
-            .setItems(options) { _, which ->
+            .setTitle("Создать")
+            .setItems(items) { _, which ->
                 when (which) {
-                    0 -> createFolder()
-                    1 -> addFile()
+                    0 -> createTextFile()
+                    1 -> createFolder()
+                    2 -> addFile()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun createTextFile() {
+        val editText = EditText(this)
+        editText.hint = "Имя файла"
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Создать текстовый файл")
+            .setView(editText)
+            .setPositiveButton("Создать") { _, _ ->
+                val fileName = editText.text.toString().trim()
+                if (fileName.isNotEmpty()) {
+                    val file = File(storageDir, "$fileName.txt")
+                    file.writeText("") // Создаем пустой файл
+                    loadFiles() // Обновляем список
+                    Toast.makeText(this, "Файл создан", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Отмена", null)
@@ -79,105 +133,40 @@ class FileManagerActivity : AppCompatActivity() {
     }
 
     private fun createFolder() {
-        val folderNumber = items.count { it.isFolder } + 1
-        val newFolder = FileItem(
-            name = "Папка $folderNumber",
-            isFolder = true,
-            timestamp = System.currentTimeMillis()
-        )
+        val editText = EditText(this)
+        editText.hint = "Имя папки"
 
-        items.add(newFolder)
-        adapter.notifyItemInserted(items.size - 1)
-        Toast.makeText(this, "Папка создана", Toast.LENGTH_SHORT).show()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Создать папку")
+            .setView(editText)
+            .setPositiveButton("Создать") { _, _ ->
+                val folderName = editText.text.toString().trim()
+                if (folderName.isNotEmpty()) {
+                    val folder = File(storageDir, folderName)
+                    folder.mkdirs()
+                    loadFiles()
+                    Toast.makeText(this, "Папка создана", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun addFile() {
-        val fileNumber = items.count { !it.isFolder } + 1
-        val newFile = FileItem(
-            name = "Файл $fileNumber.txt",
-            isFolder = false,
-            timestamp = System.currentTimeMillis()
-        )
-
-        items.add(newFile)
-        adapter.notifyItemInserted(items.size - 1)
-        Toast.makeText(this, "Файл добавлен", Toast.LENGTH_SHORT).show()
+        // Здесь можно реализовать выбор файла из системы
+        Toast.makeText(this, "Функция добавления файла", Toast.LENGTH_SHORT).show()
     }
 
-    private fun loadFolderContents(folderName: String) {
-        items.clear()
-        when (folderName) {
-            "root" -> {
-                items.addAll(listOf(
-                    FileItem("Документы", true, System.currentTimeMillis() - 86400000),
-                    FileItem("Изображения", true, System.currentTimeMillis() - 172800000),
-                    FileItem("Заметка.txt", false, System.currentTimeMillis() - 3600000)
-                ))
-            }
-            "Папка 1" -> {
-                items.addAll(listOf(
-                    FileItem("Документ 1.pdf", false, System.currentTimeMillis() - 7200000),
-                    FileItem("Изображение 1.jpg", false, System.currentTimeMillis() - 3600000)
-                ))
-            }
-            else -> {
-                items.add(FileItem("Новая папка", true, System.currentTimeMillis()))
-                items.add(FileItem("Новый файл.txt", false, System.currentTimeMillis()))
-            }
-        }
-        adapter.notifyDataSetChanged()
-    }
-
-    private fun updateUI() {
-        binding.tvTitle.text = "Папка: ${pathStack.last()}"
-        binding.btnBack.setImageResource(
-            if (pathStack.size > 1) android.R.drawable.ic_menu_directions
-            else android.R.drawable.ic_media_previous
-        )
-    }
-
-    data class FileItem(
-        val name: String,
-        val isFolder: Boolean,
-        val timestamp: Long
-    )
-
-    class FileAdapter(
-        private val items: List<FileItem>,
-        private val onItemClick: (FileItem) -> Unit
-    ) : RecyclerView.Adapter<FileAdapter.ViewHolder>() {
-
-        class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-            val tvName: TextView = view.findViewById(R.id.tvName)
-            val btnDelete: ImageButton = view.findViewById(R.id.btnDelete)
-            val icon: TextView = view.findViewById(R.id.icon)
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_file, parent, false)
-            return ViewHolder(view)
-        }
-
-        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            val item = items[position]
-
-            holder.icon.text = if (item.isFolder) "📁" else "📄"
-            holder.tvName.text = item.name
-
-            holder.itemView.setOnClickListener {
-                onItemClick(item)
-            }
-
-            holder.btnDelete.setOnClickListener {
-                Toast.makeText(
-                    holder.itemView.context,
-                    "Удалено: ${item.name}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-
-        override fun getItemCount() = items.size
+    private fun openFile(file: File) {
+        // Открытие файла
+        Toast.makeText(this, "Открыт файл: ${file.name}", Toast.LENGTH_SHORT).show()
     }
 }
+
+// Модель данных
+data class FileItem(
+    val name: String,
+    val size: String,
+    val date: String,
+    val file: File
+)

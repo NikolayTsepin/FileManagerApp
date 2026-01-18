@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 
-class WelcomeTextTest : TestCase() {
+class MainScreen : TestCase() {
     @get:Rule
 
     val activityRule = ActivityScenarioRule(MainActivity::class.java)

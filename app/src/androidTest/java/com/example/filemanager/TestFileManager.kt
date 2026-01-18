@@ -5,7 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.FileWriter
 
-object TestFileManager {
+object FileManager {
 
     // Тестовая директория в cacheDir приложения
     private val testDir: File by lazy {
