@@ -26,6 +26,7 @@ class MainScreen : TestCase() {
                     }
                     goToFilesButton {
                         isDisplayed()
+                        hasText("Перейти к файлам")
                     }
                 }
             }
